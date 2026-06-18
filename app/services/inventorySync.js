@@ -9,18 +9,7 @@
  * 5. Return sync report
  */
 
-const GET_FIRST_LOCATION = `
-  query getFirstLocation {
-    locations(first: 1) {
-      edges {
-        node {
-          id
-          name
-        }
-      }
-    }
-  }
-`;
+import { resolveShopifyLocationId } from "./shopifyLocation.server.js";
 
 const GET_VARIANT_BY_SKU = `
   query getVariantBySku($sku: String!) {
@@ -30,6 +19,7 @@ const GET_VARIANT_BY_SKU = `
           id
           sku
           price
+          compareAtPrice
           inventoryQuantity
           inventoryItem {
             id
@@ -113,8 +103,8 @@ const UPDATE_VARIANT = `
 `;
 
 const CREATE_PRODUCT = `
-  mutation productCreate($input: ProductInput!) {
-    productCreate(input: $input) {
+  mutation productCreate($product: ProductCreateInput!) {
+    productCreate(product: $product) {
       product {
         id
         title
@@ -225,36 +215,53 @@ async function shopifyGraphQL(admin, query, variables = {}) {
 }
 
 function buildDescriptionHtml(product) {
-  return `
-    <p>${product.description || ""}</p>
-    ${
-      product.dimensions
-        ? `<p><strong>Dimensions:</strong> ${product.dimensions}</p>`
-        : ""
-    }
-  `;
+  const parts = [];
+
+  if (product.description) {
+    parts.push(`<p>${product.description}</p>`);
+  }
+
+  if (product.dimensions) {
+    parts.push(`<p><strong>Dimensions:</strong> ${product.dimensions}</p>`);
+  }
+
+  if (product.itemSize) {
+    parts.push(`<p><strong>Item Size:</strong> ${product.itemSize}</p>`);
+  }
+
+  return parts.join("");
 }
 
 function buildTags(product) {
-  const tags = [];
+  const tags = new Set();
 
-  if (product.collection) tags.push(product.collection);
-  if (product.category) tags.push(product.category);
+  for (const value of [
+    product.collection,
+    product.category,
+    product.subcategory,
+    product.type,
+    product.color,
+    product.style,
+  ]) {
+    if (value) tags.add(value);
+  }
 
-  return tags;
+  if (product.closeOut) tags.add("closeout");
+  if (product.hotList) tags.add("hot-list");
+  if (product.specialOrder) tags.add("special-order");
+  if (product.discontinued) tags.add("discontinued");
+
+  return [...tags];
+}
+
+function resolveProductStatus(product) {
+  if (product.discontinued) return "ARCHIVED";
+  if (product.inStock || product.quantity > 0) return "ACTIVE";
+  return "DRAFT";
 }
 
 async function getLocationId(admin, locationId) {
-  if (locationId) return locationId;
-
-  const data = await shopifyGraphQL(admin, GET_FIRST_LOCATION);
-  const firstLocation = data?.locations?.edges?.[0]?.node;
-
-  if (!firstLocation?.id) {
-    throw new Error("No Shopify location found.");
-  }
-
-  return firstLocation.id;
+  return resolveShopifyLocationId(admin, locationId);
 }
 
 async function findVariantBySku(admin, sku) {
@@ -275,6 +282,9 @@ async function findVariantBySku(admin, sku) {
     variantId: edge.node.id,
     sku: edge.node.sku,
     currentPrice: parseFloat(edge.node.price),
+    currentCompareAtPrice: edge.node.compareAtPrice
+      ? parseFloat(edge.node.compareAtPrice)
+      : null,
     currentQuantity: edge.node.inventoryQuantity,
     inventoryItemId: edge.node.inventoryItem.id,
     productId: edge.node.product.id,
@@ -283,17 +293,47 @@ async function findVariantBySku(admin, sku) {
   };
 }
 
+async function setSkuOnInventoryItem(admin, inventoryItemId, sku) {
+  if (!sku) return;
+
+  const data = await shopifyGraphQL(
+    admin,
+    `
+    mutation inventoryItemUpdate($id: ID!, $input: InventoryItemInput!) {
+      inventoryItemUpdate(id: $id, input: $input) {
+        inventoryItem { id sku }
+        userErrors { field message }
+      }
+    }
+    `,
+    {
+      id: inventoryItemId,
+      input: { sku, tracked: true },
+    },
+  );
+
+  const userErrors = data?.inventoryItemUpdate?.userErrors ?? [];
+  if (userErrors.length > 0) {
+    throw new Error(userErrors.map((e) => e.message).join(", "));
+  }
+}
+
 async function createProduct(admin, product, locationId) {
   const finalLocationId = await getLocationId(admin, locationId);
 
+  const productPayload = {
+    title: product.model_name || product.sku,
+    descriptionHtml: buildDescriptionHtml(product),
+    productType: product.category || undefined,
+    tags: buildTags(product),
+    status: resolveProductStatus(product),
+  };
+
+  const vendor = product.vendor || product.manufacturer;
+  if (vendor) productPayload.vendor = vendor;
+
   const productData = await shopifyGraphQL(admin, CREATE_PRODUCT, {
-    input: {
-      title: product.model_name,
-      descriptionHtml: buildDescriptionHtml(product),
-      productType: product.category,
-      tags: buildTags(product),
-      status: product.inStock ? "ACTIVE" : "DRAFT",
-    },
+    product: productPayload,
   });
 
   const productErrors = productData?.productCreate?.userErrors ?? [];
@@ -309,18 +349,20 @@ async function createProduct(admin, product, locationId) {
     throw new Error("Default variant was not created by Shopify.");
   }
 
+  await setSkuOnInventoryItem(admin, defaultVariant.inventoryItem.id, product.sku);
+
+  const variantInput = {
+    id: defaultVariant.id,
+    price: String(product.price),
+  };
+
+  if (product.compareAtPrice) {
+    variantInput.compareAtPrice = String(product.compareAtPrice);
+  }
+
   const variantData = await shopifyGraphQL(admin, UPDATE_DEFAULT_VARIANT, {
     productId: createdProduct.id,
-    variants: [
-      {
-        id: defaultVariant.id,
-        price: String(product.price),
-        inventoryItem: {
-          sku: product.sku,
-          tracked: true,
-        },
-      },
-    ],
+    variants: [variantInput],
   });
 
   const variantErrors =
@@ -357,6 +399,7 @@ async function updateProductDetails(admin, productId, product) {
       title: product.model_name,
       descriptionHtml: buildDescriptionHtml(product),
       productType: product.category,
+      vendor: product.vendor || product.manufacturer || undefined,
       tags: buildTags(product),
     },
   });
@@ -370,12 +413,18 @@ async function updateProductDetails(admin, productId, product) {
   return data.productUpdate.product;
 }
 
-async function updateVariantPrice(admin, variantId, price) {
+async function updateVariantPrice(admin, variantId, price, compareAtPrice) {
+  const input = {
+    id: variantId,
+    price: String(price),
+  };
+
+  if (compareAtPrice) {
+    input.compareAtPrice = String(compareAtPrice);
+  }
+
   const data = await shopifyGraphQL(admin, UPDATE_VARIANT, {
-    input: {
-      id: variantId,
-      price: String(price),
-    },
+    input,
   });
 
   const userErrors = data?.productVariantUpdate?.userErrors ?? [];
@@ -418,8 +467,8 @@ async function updateInventory(admin, { inventoryItemId, locationId, quantity })
   return data.inventorySetQuantities;
 }
 
-async function updateProductStatus(admin, { productId, inStock, currentStatus }) {
-  const targetStatus = inStock ? "ACTIVE" : "DRAFT";
+async function updateProductStatus(admin, { productId, product, currentStatus }) {
+  const targetStatus = resolveProductStatus(product);
 
   if (currentStatus === targetStatus) return null;
 
@@ -443,7 +492,13 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function runInventorySync({ adapter, admin, locationId }) {
+export async function runInventorySync({
+  adapter,
+  admin,
+  locationId,
+  offset = 0,
+  limit = null,
+}) {
   const startedAt = new Date().toISOString();
 
   const report = {
@@ -451,6 +506,8 @@ export async function runInventorySync({ adapter, admin, locationId }) {
     completedAt: null,
     source: "csv",
     totalRows: 0,
+    processedOffset: offset,
+    processedLimit: limit,
     created: [],
     updated: [],
     skipped: [],
@@ -477,16 +534,24 @@ export async function runInventorySync({ adapter, admin, locationId }) {
       });
     }
   } catch (err) {
+    console.error("[inventory-sync] Setup error:", err.message);
     report.failed.push({
       sku: "ALL",
-      reason: `Adapter error: ${err.message}`,
+      reason: `Setup error: ${err.message}`,
     });
 
     report.completedAt = new Date().toISOString();
     return report;
   }
 
-  for (const product of products) {
+  const productsToSync =
+    limit != null
+      ? products.slice(offset, offset + limit)
+      : products.slice(offset);
+
+  report.processedCount = productsToSync.length;
+
+  for (const product of productsToSync) {
     try {
       const variant = await findVariantBySku(admin, product.sku);
 
@@ -498,7 +563,7 @@ export async function runInventorySync({ adapter, admin, locationId }) {
           productTitle: created.productTitle,
           quantity: product.quantity,
           price: product.price,
-          status: product.inStock ? "ACTIVE" : "DRAFT",
+          status: resolveProductStatus(product),
           reason: "Product created because SKU was not found in Shopify",
         });
 
@@ -509,10 +574,18 @@ export async function runInventorySync({ adapter, admin, locationId }) {
       await updateProductDetails(admin, variant.productId, product);
 
       const priceChanged = variant.currentPrice !== product.price;
+      const compareAtPriceChanged =
+        (variant.currentCompareAtPrice ?? null) !==
+        (product.compareAtPrice ?? null);
       const quantityChanged = variant.currentQuantity !== product.quantity;
 
-      if (priceChanged) {
-        await updateVariantPrice(admin, variant.variantId, product.price);
+      if (priceChanged || compareAtPriceChanged) {
+        await updateVariantPrice(
+          admin,
+          variant.variantId,
+          product.price,
+          product.compareAtPrice,
+        );
       }
 
       if (quantityChanged) {
@@ -525,11 +598,16 @@ export async function runInventorySync({ adapter, admin, locationId }) {
 
       const newStatus = await updateProductStatus(admin, {
         productId: variant.productId,
-        inStock: product.inStock,
+        product,
         currentStatus: variant.productStatus,
       });
 
-      if (!priceChanged && !quantityChanged && !newStatus) {
+      if (
+        !priceChanged &&
+        !compareAtPriceChanged &&
+        !quantityChanged &&
+        !newStatus
+      ) {
         report.skipped.push({
           sku: product.sku,
           reason: "No product, price, inventory, or status changes needed",
@@ -554,6 +632,7 @@ export async function runInventorySync({ adapter, admin, locationId }) {
 
       await delay(500);
     } catch (err) {
+      console.error(`[inventory-sync] Failed SKU ${product.sku}:`, err.message);
       report.failed.push({
         sku: product.sku,
         reason: err.message,

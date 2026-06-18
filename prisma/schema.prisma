@@ -9,8 +9,8 @@ generator client {
 // enough when changing adapters.
 // See https://www.prisma.io/docs/orm/reference/prisma-schema-reference#string for more information
 datasource db {
-  provider = "sqlite"
-  url      = "file:dev.sqlite"
+  provider = "postgresql"
+  url      = "postgres://u9df1cj5cg20eh:p7b830823055a0839ea9f059f0f9a7adeb7587b8d175ed2e2fe9b705d2ebfdf40@c55vaqijj0vpoi.cluster-czrs8kj4isg7.us-east-1.rds.amazonaws.com:5432/da9edvopo1dlsg"
 }
 
 model Session {
@@ -60,4 +60,10 @@ model SyncJobItem {
 
   @@index([jobId])
   @@index([status])
+}
+
+model ProductSyncState {
+  sku                 String   @id
+  lastUpdatedByVendor String?
+  syncedAt            DateTime @updatedAt
 }

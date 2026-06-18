@@ -21,6 +21,7 @@ export default function App() {
           <s-link href="/app/additional">Additional page</s-link>
           <s-link href="/app/upload">Upload CSV</s-link>
           <s-link href="/app/sync">Inventory Sync</s-link>
+          <s-link href="/app/cron">FTP Cron Sync</s-link>
         </s-app-nav>
         <Outlet />
       </PolarisAppProvider>

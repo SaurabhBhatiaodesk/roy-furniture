@@ -32,3 +32,11 @@ export const unauthenticated = shopify.unauthenticated;
 export const login = shopify.login;
 export const registerWebhooks = shopify.registerWebhooks;
 export const sessionStorage = shopify.sessionStorage;
+
+if (process.env.FTP_HOST && process.env.CRON_SYNC_ENABLED !== "false") {
+  import("./services/cronSync.server.js")
+    .then(({ startCronSync }) => startCronSync())
+    .catch((err) => {
+      console.error("[cron-sync] Failed to start:", err.message);
+    });
+}

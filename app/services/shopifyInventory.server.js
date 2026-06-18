@@ -1,9 +1,7 @@
-export async function syncInventory(admin, { inventoryItemId, quantity }) {
-  const locationId = process.env.SHOPIFY_LOCATION_ID;
+import { resolveShopifyLocationId } from "./shopifyLocation.server.js";
 
-  if (!locationId) {
-    throw new Error("SHOPIFY_LOCATION_ID missing in .env");
-  }
+export async function syncInventory(admin, { inventoryItemId, quantity }) {
+  const locationId = await resolveShopifyLocationId(admin);
 
   await activateInventoryAtLocation(admin, {
     inventoryItemId,
