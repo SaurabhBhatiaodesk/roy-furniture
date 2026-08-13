@@ -1,3 +1,4 @@
+/* global globalThis */
 import { readFile, writeFile, stat, unlink } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";

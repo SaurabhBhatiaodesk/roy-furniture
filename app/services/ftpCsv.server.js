@@ -24,7 +24,7 @@ class StringCollector extends Writable {
   }
 }
 
-function useSftp() {
+function shouldUseSftp() {
   if (process.env.FTP_USE_SFTP === "true") return true;
   return Number(process.env.FTP_PORT || 21) === 22;
 }
@@ -185,7 +185,7 @@ export async function fetchCsvFromFtp() {
     throw new Error("FTP_HOST, FTP_USER, and FTP_PASSWORD are required");
   }
 
-  if (useSftp()) {
+  if (shouldUseSftp()) {
     return fetchCsvViaSftp({ host, port, user, password, remotePath });
   }
 

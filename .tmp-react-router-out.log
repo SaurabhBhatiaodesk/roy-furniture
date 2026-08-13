@@ -1,0 +1,18 @@
+[33m  ⚠️  Future Flag Warning: Route middleware support is changing in React Router v8.
+     You can use the `future.v8_middleware` flag to opt in early.
+     -> https://reactrouter.com/v7/upgrading/future#futurev8_middleware[39m
+[33m  ⚠️  Future Flag Warning: Route module splitting behavior is changing in React Router v8.
+     You can use the `future.v8_splitRouteModules` flag to opt in early.
+     -> https://reactrouter.com/v7/upgrading/future#futurev8_splitroutemodules[39m
+[33m  ⚠️  Future Flag Warning: Vite Environment API usage is changing in React Router v8.
+     You can use the `future.v8_viteEnvironmentApi` flag to opt in early.
+     -> https://reactrouter.com/v7/upgrading/future#futurev8_viteenvironmentapi[39m
+[33m  ⚠️  Future Flag Warning: Request handling behavior is changing in React Router v8.
+     You can use the `future.v8_passThroughRequests` flag to opt in early.
+     -> https://reactrouter.com/v7/upgrading/future#futurev8_passthroughrequests[39m
+[33m  ⚠️  Future Flag Warning: Data request URL formats are changing in React Router v8.
+     You can use the `future.v8_trailingSlashAwareDataRequests` flag to opt in early.
+     -> https://reactrouter.com/v7/upgrading/future#futurev8_trailingslashawaredatarequests[39m
+Port 49520 is in use, trying another one...
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://localhost:[1m49521[22m/[39m
+[2m  [32m➜[39m  [1mNetwork[22m[2m: use [22m[1m--host[22m[2m to expose[22m

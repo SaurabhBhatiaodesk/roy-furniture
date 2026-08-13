@@ -1,0 +1,31 @@
+╭─ info ───────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│  Using shopify.app.roy-furniture.toml for default values:                    │
+│                                                                              │
+│    • Org:             Base2Brand                                             │
+│    • App:             Roy Furniture                                          │
+│    • Dev store:       roy-furniture.myshopify.com                            │
+│    • Update URLs:     Yes                                                    │
+│                                                                              │
+│   You can pass `--reset` to your command to reset your app configuration.    │
+│                                                                              │
+│   Note: `--use-localhost` is not compatible with Shopify features which      │
+│  directly invoke your app (such as Webhooks, App proxy, and Flow actions),   │
+│  or those which require testing your app from another device (such as POS).  │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+╭─ warning ────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│  A random port will be used for GraphiQL because 3457 is not available.      │
+│                                                                              │
+│  If you want to use a specific port, you can choose a different one by       │
+│  setting the  `--graphiql-port`  flag.                                       │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+Finding or downloading mkcert binary ...
+[2K[1A[2K[G
+Generating self-signed certificate for localhost. You may be prompted for your password.
+✔ Certificate generated at .shopify/localhost.pem
+
