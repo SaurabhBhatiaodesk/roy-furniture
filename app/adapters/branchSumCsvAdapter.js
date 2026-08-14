@@ -42,6 +42,8 @@ function parseInvAdvBranchSum(fileContent) {
     const quantity = row.Available ?? row.QtyAvailable ?? "0";
     const inStockQty = row["In Stock"] ?? quantity;
     const lastUpdatedByVendor =
+      row["LastPPCUpdate"] ||
+      row["Last PPC Update"] ||
       row["Last Updated By Vendor"] ||
       row["Last Updated"] ||
       row.LastUpdatedByVendor ||

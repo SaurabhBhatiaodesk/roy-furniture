@@ -1,8 +1,8 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "f6f6c5aa41afb25fd3e8c7e0573e097b"
+client_id = "25f5c49991f1ee6e152f91bcd5d1ad22"
 name = "roy-furniture"
-application_url = "https://example.com"
+application_url = "https://roys-ed41ff436ea9.herokuapp.com"
 embedded = true
 
 [webhooks]
@@ -10,12 +10,12 @@ api_version = "2026-04"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "read_products,write_products,read_inventory,write_inventory,read_locations"
+scopes = "read_products,write_products,read_inventory,write_inventory,read_locations,write_metaobject_definitions,write_metaobjects"
 optional_scopes = [ ]
 use_legacy_install_flow = false
 
 [auth]
-redirect_urls = [ ]
+redirect_urls = [ "https://roys-ed41ff436ea9.herokuapp.com/api/auth" ]
 
 [build]
 automatically_update_urls_on_dev = true
