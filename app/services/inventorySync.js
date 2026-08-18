@@ -87,10 +87,18 @@ const UPDATE_PRODUCT = `
   }
 `;
 
+// productVariantUpdate was removed from the Admin API — variant price/compareAtPrice
+// updates now go through productVariantsBulkUpdate instead.
 const UPDATE_VARIANT = `
-  mutation productVariantUpdate($input: ProductVariantInput!) {
-    productVariantUpdate(input: $input) {
-      productVariant {
+  mutation productVariantsBulkUpdate(
+    $productId: ID!,
+    $variants: [ProductVariantsBulkInput!]!
+  ) {
+    productVariantsBulkUpdate(
+      productId: $productId,
+      variants: $variants
+    ) {
+      productVariants {
         id
         price
       }
@@ -413,27 +421,28 @@ async function updateProductDetails(admin, productId, product) {
   return data.productUpdate.product;
 }
 
-async function updateVariantPrice(admin, variantId, price, compareAtPrice) {
-  const input = {
+async function updateVariantPrice(admin, productId, variantId, price, compareAtPrice) {
+  const variantInput = {
     id: variantId,
     price: String(price),
   };
 
   if (compareAtPrice) {
-    input.compareAtPrice = String(compareAtPrice);
+    variantInput.compareAtPrice = String(compareAtPrice);
   }
 
   const data = await shopifyGraphQL(admin, UPDATE_VARIANT, {
-    input,
+    productId,
+    variants: [variantInput],
   });
 
-  const userErrors = data?.productVariantUpdate?.userErrors ?? [];
+  const userErrors = data?.productVariantsBulkUpdate?.userErrors ?? [];
 
   if (userErrors.length > 0) {
     throw new Error(userErrors.map((e) => e.message).join(", "));
   }
 
-  return data.productVariantUpdate.productVariant;
+  return data.productVariantsBulkUpdate.productVariants[0];
 }
 
 async function updateInventory(admin, { inventoryItemId, locationId, quantity }) {
@@ -582,6 +591,7 @@ export async function runInventorySync({
       if (priceChanged || compareAtPriceChanged) {
         await updateVariantPrice(
           admin,
+          variant.productId,
           variant.variantId,
           product.price,
           product.compareAtPrice,
