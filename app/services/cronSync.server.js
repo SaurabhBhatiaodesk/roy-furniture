@@ -240,7 +240,7 @@ export async function runCronSyncJob({ shop: preferredShop } = {}) {
     state.lastRun = {
       startedAt,
       completedAt: new Date().toISOString(),
-      success: report.failed.every((f) => f.sku !== "ALL"),
+      success: report.failed.length === 0,
       shop,
       report,
       progress: {

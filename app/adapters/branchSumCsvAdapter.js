@@ -22,12 +22,14 @@ export function branchSumCsvAdapter({ fileContent }) {
 
 export function parseInvAdvBranchSum(fileContent) {
   const rows = parseCSVRows(fileContent.trim());
-  const headers = rows.shift()?.map((h) => clean(h)) ?? [];
+  const headers = rows.next().value?.map((h) => clean(h)) ?? [];
 
   const valid = [];
   const invalid = [];
 
-  rows.forEach((cols, index) => {
+  let index = -1;
+  for (const cols of rows) {
+    index++;
     const row = Object.fromEntries(
       headers.map((header, i) => [header, clean(cols[i] || "")]),
     );
@@ -70,7 +72,7 @@ export function parseInvAdvBranchSum(fileContent) {
         data: row,
         errors,
       });
-      return;
+      continue;
     }
 
     const available = Math.max(0, toInteger(quantity));
@@ -115,7 +117,7 @@ export function parseInvAdvBranchSum(fileContent) {
       lastPpcUpdate: clean(lastPpcUpdate),
       lastUpdatedByVendor: clean(lastPpcUpdate),
     });
-  });
+  }
 
   return { valid, invalid };
 }
@@ -145,8 +147,7 @@ function toBoolean(value) {
   return normalized === "true" || normalized === "1" || normalized === "yes";
 }
 
-function parseCSVRows(text) {
-  const rows = [];
+function* parseCSVRows(text) {
   let row = [];
   let value = "";
   let insideQuotes = false;
@@ -166,7 +167,7 @@ function parseCSVRows(text) {
     } else if ((char === "\n" || char === "\r") && !insideQuotes) {
       if (value || row.length) {
         row.push(value);
-        rows.push(row);
+        yield row;
         row = [];
         value = "";
       }
@@ -181,8 +182,7 @@ function parseCSVRows(text) {
 
   if (value || row.length) {
     row.push(value);
-    rows.push(row);
+    yield row;
   }
 
-  return rows;
 }

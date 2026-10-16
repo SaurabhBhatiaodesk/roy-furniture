@@ -319,6 +319,18 @@ async function resolveCollectionId(admin, title) {
 async function getOnlineStorePublicationId(admin) {
   if (publicationCaches.has(admin)) return publicationCaches.get(admin);
 
+  const installation = await shopifyGraphQL(admin, `
+    query getSyncAccessScopes {
+      currentAppInstallation { accessScopes { handle } }
+    }
+  `);
+  const scopes = new Set(installation.currentAppInstallation.accessScopes.map(scope => scope.handle));
+  if (!scopes.has("write_publications")) {
+    console.warn("[inventory-sync] Publication sync disabled: write_publications is not granted. Product and inventory sync will continue.");
+    publicationCaches.set(admin, null);
+    return null;
+  }
+
   const data = await shopifyGraphQL(admin, GET_ONLINE_STORE_PUBLICATION);
   const publication = data.publications.nodes.find(
     (node) => node.supportsFuturePublishing,

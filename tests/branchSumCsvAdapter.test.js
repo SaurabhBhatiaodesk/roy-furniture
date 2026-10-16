@@ -2,6 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { parseInvAdvBranchSum } from "../app/adapters/branchSumCsvAdapter.js";
 
+test("incremental CSV parsing preserves quoted multiline fields and skips invalid rows", () => {
+  const result = parseInvAdvBranchSum('Item Number,Description,Retail,Available\r\n,"Invalid",99,1\r\nCHAIR-1,"A chair, with ""arms""\nand cushion",100,2\r\nCHAIR-2,Chair,50,1');
+  assert.equal(result.invalid.length, 1);
+  assert.equal(result.invalid[0].row, 2);
+  assert.equal(result.valid.length, 2);
+  assert.equal(result.valid[0].description, 'A chair, with "arms"\nand cushion');
+  assert.equal(result.valid[1].sku, "CHAIR-2");
+});
+
 test("parses LastPPCUpdate and Furniture Wizard product fields", () => {
   const csv = [
     "Item Number,Model Name,Description,Retail,Regular,Available,In Stock,Category,Collection,Dimensions,LastPPCUpdate",

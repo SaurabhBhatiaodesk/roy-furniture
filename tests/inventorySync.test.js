@@ -4,7 +4,7 @@ import { runInventorySync } from "../app/services/inventorySync.js";
 
 const product = { sku: "TEST-1", model_name: "Chair", price: 100, quantity: 2 };
 
-function fixture({ details = {}, quantity = 2, total = 99, status = "ACTIVE", published = true, collection = false, fail = false } = {}) {
+function fixture({ details = {}, quantity = 2, total = 99, status = "ACTIVE", published = true, collection = false, fail = false, publicationScopes = true } = {}) {
   const calls = [];
   const admin = { graphql: async (query, { variables } = {}) => {
     calls.push({ query, variables });
@@ -17,6 +17,8 @@ function fixture({ details = {}, quantity = 2, total = 99, status = "ACTIVE", pu
         inventoryItem: { id: "item-1", inventoryLevel: { quantities: [{ name: "available", quantity }] } },
         product: { id: "product-1", title: "Chair", descriptionHtml: "", productType: "", vendor: "", tags: [], status, ...details },
       } }] } };
+    } else if (query.includes("query getSyncAccessScopes")) {
+      data = { currentAppInstallation: { accessScopes: publicationScopes ? [{ handle: "write_publications" }] : [] } };
     } else if (query.includes("query getOnlineStorePublication")) {
       data = { publications: { nodes: [{ id: "publication-1", supportsFuturePublishing: true }] } };
     } else if (query.includes("query getPublicationStatus")) {
@@ -98,4 +100,13 @@ test("compare-at-only edits are counted as updates", async () => {
   const report = await f.run({ compareAtPrice: 150 });
   assert.equal(report.updated[0].compareAtPriceChanged, true);
   assert.equal(f.calls.filter(c => c.query.includes("mutation")).length, 1);
+});
+
+test("missing optional publication permissions do not fail product sync or cause retries", async () => {
+  const f = fixture({ publicationScopes: false });
+  const report = await f.run();
+  assert.equal(report.failed.length, 0);
+  assert.equal(report.skipped.length, 1);
+  assert.equal(f.calls.some(c => c.query.includes("query getOnlineStorePublication")), false);
+  assert.equal(f.calls.some(c => c.query.includes("mutation")), false);
 });
