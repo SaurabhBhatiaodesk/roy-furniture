@@ -1,4 +1,5 @@
-import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
+import { useEffect } from "react";
+import { Form, useActionData, useLoaderData, useNavigation, useRevalidator } from "react-router";
 import {
   Page,
   Layout,
@@ -47,8 +48,11 @@ export async function action({ request }) {
   const intent = formData.get("intent");
 
   if (intent === "run-now") {
-    const result = await runCronSyncJob({ shop: session.shop });
-    return { ok: true, lastRun: result };
+    // Heroku requests time out after 30 seconds; the batch continues on this dyno.
+    void runCronSyncJob({ shop: session.shop }).catch((error) => {
+      console.error("[cron-sync] Manual background run failed:", error.message);
+    });
+    return { ok: true, started: true };
   }
 
   return { ok: false, message: "Unknown action" };
@@ -58,7 +62,14 @@ export default function CronSyncPage() {
   const data = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
-  const isRunning = navigation.state === "submitting";
+  const revalidator = useRevalidator();
+  const isRunning = navigation.state === "submitting" || data.progress.isRunning;
+
+  useEffect(() => {
+    if (!data.progress.isRunning) return;
+    const timer = setInterval(() => { void revalidator.revalidate(); }, 5000);
+    return () => clearInterval(timer);
+  }, [data.progress.isRunning, revalidator]);
 
   const lastRun = actionData?.lastRun || data.lastRun;
 

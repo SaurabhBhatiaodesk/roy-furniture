@@ -46,6 +46,7 @@ export function getCronSyncProgress() {
   const lastRun = state.lastRun;
 
   return {
+    isRunning: state.isRunning,
     batchSize: BATCH_SIZE,
     totalCsvProducts: state.cachedProducts?.length ?? 0,
     pendingChanges: lastRun?.progress?.pendingChanges ?? 0,
