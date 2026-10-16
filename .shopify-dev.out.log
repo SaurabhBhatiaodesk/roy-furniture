@@ -1,11 +1,18 @@
 
-> dev:tunnel
+> dev
 > shopify app dev
 
 
 Preview URL: https://admin.shopify.com/store/roy-furniture/apps/536cc94fa115e359a5dbce88895329e2?dev-console=show
-GraphiQL URL (Admin API): http://localhost:3457/graphiql?key=4276e418ab7e4ba2a7c2c00408d757a9176f4fca88a74cbd67d7f145400840de
-Preparing dev preview on roy-furniture.myshopify.comProxy server started on port 51093 GraphiQL server started on port 3457[33m  ⚠️  Future Flag Warning: Route middleware support is changing in React Router v8.
+GraphiQL URL (Admin API): http://localhost:55175/graphiql?key=4276e418ab7e4ba2a7c2c00408d757a9176f4fca88a74cbd67d7f145400840de
+Running pre-dev command: "npm exec prisma generate"Preparing dev preview on roy-furniture.myshopify.comProxy server started on port 55172 GraphiQL server started on port 55175✅ Ready, watching for changes in your app │ Access scopes auto-granted: read_inventory, read_locations, read_products, write_inventory, write_metaobject_definitions, write_metaobjects, write_products└ Using URL: https://vector-inner-only-nitrogen.trycloudflare.comPrisma schema loaded from prisma\schema.prisma
+Datasource "db": PostgreSQL database "da9edvopo1dlsg", schema "public" at "c55vaqijj0vpoi.cluster-czrs8kj4isg7.us-east-1.rds.amazonaws.com:5432"
+
+1 migration found in prisma/migrations
+
+
+No pending migrations to apply.
+[33m  ⚠️  Future Flag Warning: Route middleware support is changing in React Router v8.
      You can use the `future.v8_middleware` flag to opt in early.
      -> https://reactrouter.com/v7/upgrading/future#futurev8_middleware[39m
 [33m  ⚠️  Future Flag Warning: Route module splitting behavior is changing in React Router v8.
@@ -20,26 +27,9 @@ Preparing dev preview on roy-furniture.myshopify.comProxy server started on port
 [33m  ⚠️  Future Flag Warning: Data request URL formats are changing in React Router v8.
      You can use the `future.v8_trailingSlashAwareDataRequests` flag to opt in early.
      -> https://reactrouter.com/v7/upgrading/future#futurev8_trailingslashawaredatarequests[39m
-  [32m➜[39m  [1mLocal[22m:   [36mhttp://localhost:[1m51102[22m/[39m
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://localhost:[1m55176[22m/[39m
 [2m  [32m➜[39m  [1mNetwork[22m[2m: use [22m[1m--host[22m[2m to expose[22m
-✅ Ready, watching for changes in your app │ Access scopes auto-granted: read_inventory, read_locations, read_orders, read_products, read_publications, write_inventory, write_metaobject_definitions, write_metaobjects, write_products, write_publications└ Using URL: https://beer-attacks-proceeding-frames.trycloudflare.com[shopify-api/INFO] version 14.0.0, environment React Router
-[cron-sync] Scheduled every 10 minute(s), batch size 250, delta by LastPPCUpdate + product data (*/10 * * * *)
+[shopify-api/INFO] version 14.0.0, environment React Router
 [shopify-app/INFO] Authenticating admin request | {shop: roy-furniture.myshopify.com}
 [shopify-app/INFO] Authenticating admin request | {shop: roy-furniture.myshopify.com}
 [shopify-app/INFO] Authenticating admin request | {shop: roy-furniture.myshopify.com}
-[shopify-app/INFO] Authenticating admin request | {shop: roy-furniture.myshopify.com}
-[shopify-app/INFO] Authenticating admin request | {shop: roy-furniture.myshopify.com}
-[cron-sync] Using shop from session table: roy-furniture.myshopify.com
-[cron-sync] Fetching InvAdvBranchSum.csv from SFTP...
-[sftp] Connecting to ftp.furnwiz.cloud:22 as gweb10164...
-[sftp] Connected in 3.9s
-[sftp] Downloading /InvAdvBranchSum.csv (20.57 MB)...
-[sftp] Download complete (20.57 MB in 91.9s)
-[cron-sync] CSV saved to disk cache for 1 hour
-[cron-sync] Parsing CSV...
-[cron-sync] Parsed 55294 products
-[cron-sync] Delta sync — 55294 pending (55044 new, 250 updated) of 55294 CSV products (250 tracked)
-[cron-sync] Syncing 250 product(s) — 250 new, 0 updated (55294 pending total)...
-[inventory-sync] Using location: My Custom Location (gid://shopify/Location/90639237375)
-[cron-sync] Previous run still in progress, skipping.
-[cron-sync] Batch done — created: 54, updated: 3, skipped: 193, failed: 0 (55044 pending, 54794 new SKUs waiting)

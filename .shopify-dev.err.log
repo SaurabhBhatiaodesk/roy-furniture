@@ -11,16 +11,12 @@
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 
-X [ERROR] Could not resolve "../build/Release/cpufeatures.node"
+╭─ warning ────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│  A random port will be used for GraphiQL because 3457 is not available.      │
+│                                                                              │
+│  If you want to use a specific port, you can choose a different one by       │
+│  setting the  `--graphiql-port`  flag.                                       │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
 
-    node_modules/cpu-features/lib/index.js:3:24:
-      3 │ const binding = require('../build/Release/cpufeatures.node');
-        ╵                         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-[2m8:40:53 pm[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [31merror while updating dependencies:
-Error: Build failed with 1 error:
-node_modules/cpu-features/lib/index.js:3:24: ERROR: Could not resolve "../build/Release/cpufeatures.node"
-    at failureErrorWithLog (C:\Users\b2b\Desktop\all-apps\roy-furniture\node_modules\esbuild\lib\main.js:1467:15)
-    at C:\Users\b2b\Desktop\all-apps\roy-furniture\node_modules\esbuild\lib\main.js:926:25
-    at C:\Users\b2b\Desktop\all-apps\roy-furniture\node_modules\esbuild\lib\main.js:1345:9
-    at processTicksAndRejections (node:internal/process/task_queues:104:5)[39m
