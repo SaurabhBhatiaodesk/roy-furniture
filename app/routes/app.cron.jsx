@@ -97,7 +97,7 @@ export default function CronSyncPage() {
                   <Text as="p">
                     Runs every <strong>{data.intervalMinutes} minutes</strong>,
                     processes up to <strong>{data.batchSize} products</strong> per
-                    run — <strong>new SKUs first</strong>, then updated rows where{" "}
+                    run — <strong>updated SKUs first</strong>, then new SKUs. Existing products sync when{" "}
                     <strong>synced product data</strong> changed. Timestamp-only changes are ignored.
                   </Text>
                   <Text as="p" tone="subdued">

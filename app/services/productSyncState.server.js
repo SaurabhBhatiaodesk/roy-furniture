@@ -49,7 +49,11 @@ export function buildSyncBatch(products, syncStateMap, batchSize) {
     products,
     syncStateMap,
   );
-  const queue = [...newProducts, ...updatedProducts];
+  // Updated products (existing SKUs whose LastPPCUpdate/etc. changed) are
+  // prioritized ahead of brand-new SKUs, so price/stock changes on products
+  // that already exist in Shopify don't get stuck behind a large backlog of
+  // brand-new product creates.
+  const queue = [...updatedProducts, ...newProducts];
 
   return {
     batch: queue.slice(0, batchSize),
