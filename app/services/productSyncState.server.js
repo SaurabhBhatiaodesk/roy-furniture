@@ -1,15 +1,16 @@
 import prisma from "../db.server.js";
+import { getProductChangeToken } from "./productChangeToken.js";
 
 export function getLastUpdatedByVendor(product) {
-  return String(product.lastUpdatedByVendor ?? "").trim();
+  return getProductChangeToken(product);
 }
 
 export async function loadProductSyncStateMap() {
   const rows = await prisma.productSyncState.findMany({
-    select: { sku: true, lastUpdatedByVendor: true },
+    select: { sku: true, changeToken: true },
   });
 
-  return new Map(rows.map((row) => [row.sku, row.lastUpdatedByVendor ?? ""]));
+  return new Map(rows.map((row) => [row.sku, row.changeToken ?? ""]));
 }
 
 export function partitionChangedProducts(products, syncStateMap) {
@@ -67,10 +68,10 @@ export async function markProductsSynced(products) {
         where: { sku: product.sku },
         create: {
           sku: product.sku,
-          lastUpdatedByVendor: getLastUpdatedByVendor(product),
+          changeToken: getLastUpdatedByVendor(product),
         },
         update: {
-          lastUpdatedByVendor: getLastUpdatedByVendor(product),
+          changeToken: getLastUpdatedByVendor(product),
         },
       }),
     ),

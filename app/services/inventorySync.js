@@ -12,7 +12,7 @@
 import { resolveShopifyLocationId } from "./shopifyLocation.server.js";
 
 const GET_VARIANT_BY_SKU = `
-  query getVariantBySku($sku: String!) {
+  query getVariantBySku($sku: String!, $locationId: ID!) {
     productVariants(first: 1, query: $sku) {
       edges {
         node {
@@ -20,13 +20,19 @@ const GET_VARIANT_BY_SKU = `
           sku
           price
           compareAtPrice
-          inventoryQuantity
           inventoryItem {
             id
+            inventoryLevel(locationId: $locationId) {
+              quantities(names: ["available"]) { name quantity }
+            }
           }
           product {
             id
             title
+            descriptionHtml
+            productType
+            vendor
+            tags
             status
           }
         }
@@ -72,27 +78,12 @@ const UPDATE_INVENTORY = `
 `;
 
 const UPDATE_PRODUCT = `
-  mutation productUpdate($input: ProductInput!) {
-    productUpdate(input: $input) {
+  mutation productUpdate($product: ProductUpdateInput!) {
+    productUpdate(product: $product) {
       product {
         id
         title
         status
-      }
-      userErrors {
-        field
-        message
-      }
-    }
-  }
-`;
-
-const UPDATE_VARIANT = `
-  mutation productVariantUpdate($input: ProductVariantInput!) {
-    productVariantUpdate(input: $input) {
-      productVariant {
-        id
-        price
       }
       userErrors {
         field
@@ -153,6 +144,42 @@ const UPDATE_DEFAULT_VARIANT = `
   }
 `;
 
+const FIND_COLLECTION = `
+  query findCollection($query: String!) {
+    collections(first: 20, query: $query) {
+      nodes { id title }
+    }
+  }
+`;
+
+const CREATE_COLLECTION = `
+  mutation createCollection($input: CollectionInput!) {
+    collectionCreate(input: $input) {
+      collection { id title }
+      userErrors { field message }
+    }
+  }
+`;
+
+const GET_ONLINE_STORE_PUBLICATION = `
+  query getOnlineStorePublication {
+    publications(first: 20) {
+      nodes { id supportsFuturePublishing }
+    }
+  }
+`;
+
+const PUBLISH_RESOURCE = `
+  mutation publishResource($id: ID!, $input: [PublicationInput!]!) {
+    publishablePublish(id: $id, input: $input) {
+      userErrors { field message }
+    }
+  }
+`;
+
+const collectionCaches = new WeakMap();
+const publicationCaches = new WeakMap();
+
 async function activateInventoryAtLocation(admin, {
   inventoryItemId,
   locationId,
@@ -183,35 +210,24 @@ async function activateInventoryAtLocation(admin, {
   return data.inventoryActivate;
 }
 
-async function shopifyGraphQL(admin, query, variables = {}) {
+async function shopifyGraphQL(admin, query, variables = {}, attempt = 0) {
   const response = await admin.graphql(query, { variables });
-  const data = await response.json();
+  const result = await response.json();
 
-  if (data.errors) {
-    throw new Error(`Shopify GraphQL error: ${JSON.stringify(data.errors)}`);
+  if (result.errors?.length) {
+    const throttled = result.errors.some(
+      (error) => error.extensions?.code === "THROTTLED",
+    );
+
+    if (throttled && attempt < 4) {
+      await delay(500 * 2 ** attempt);
+      return shopifyGraphQL(admin, query, variables, attempt + 1);
+    }
+
+    throw new Error(`Shopify GraphQL error: ${JSON.stringify(result.errors)}`);
   }
 
-  return data.data;
-  
-  //For fetching location details only
-  //   const locationResponse = await admin.graphql(`
-  // {
-  //   locations(first: 10) {
-  //     edges {
-  //       node {
-  //         id
-  //         name
-  //       }
-  //     }
-  //   }
-  // }
-  //   `);
-
-  // const locationData = await locationResponse.json();
-  // console.log(
-  //   "LOCATIONS:",
-  //   JSON.stringify(locationData.data.locations.edges, null, 2)
-  // );
+  return result.data;
 }
 
 function buildDescriptionHtml(product) {
@@ -256,17 +272,96 @@ function buildTags(product) {
 
 function resolveProductStatus(product) {
   if (product.discontinued) return "ARCHIVED";
-  if (product.inStock || product.quantity > 0) return "ACTIVE";
+  if (product.quantity > 0) return "ACTIVE";
   return "DRAFT";
+}
+
+async function resolveCollectionId(admin, title) {
+  const normalizedTitle = String(title || "").trim();
+  if (!normalizedTitle) return null;
+
+  let collectionIdCache = collectionCaches.get(admin);
+  if (!collectionIdCache) {
+    collectionIdCache = new Map();
+    collectionCaches.set(admin, collectionIdCache);
+  }
+  const cacheKey = normalizedTitle.toLowerCase();
+  if (collectionIdCache.has(cacheKey)) return collectionIdCache.get(cacheKey);
+
+  const escapedTitle = normalizedTitle
+    .replaceAll("\\", "\\\\")
+    .replaceAll('"', '\\"');
+  const findData = await shopifyGraphQL(admin, FIND_COLLECTION, {
+    query: `title:${JSON.stringify(escapedTitle)}`,
+  });
+  const existing = findData.collections.nodes.find(
+    (collection) => collection.title.toLowerCase() === cacheKey,
+  );
+
+  if (existing) {
+    collectionIdCache.set(cacheKey, existing.id);
+    return existing.id;
+  }
+
+  const createData = await shopifyGraphQL(admin, CREATE_COLLECTION, {
+    input: { title: normalizedTitle },
+  });
+  const userErrors = createData.collectionCreate.userErrors ?? [];
+  if (userErrors.length) {
+    throw new Error(userErrors.map((error) => error.message).join(", "));
+  }
+
+  const collectionId = createData.collectionCreate.collection.id;
+  collectionIdCache.set(cacheKey, collectionId);
+  return collectionId;
+}
+
+async function getOnlineStorePublicationId(admin) {
+  if (publicationCaches.has(admin)) return publicationCaches.get(admin);
+
+  const data = await shopifyGraphQL(admin, GET_ONLINE_STORE_PUBLICATION);
+  const publication = data.publications.nodes.find(
+    (node) => node.supportsFuturePublishing,
+  );
+  const publicationId = publication?.id ?? null;
+  publicationCaches.set(admin, publicationId);
+  return publicationId;
+}
+
+async function publishToOnlineStore(admin, resourceId) {
+  const publicationId = await getOnlineStorePublicationId(admin);
+  if (!publicationId) return false;
+
+  const current = await shopifyGraphQL(admin, `
+    query getPublicationStatus($id: ID!, $publicationId: ID!) {
+      product(id: $id) { publishedOnPublication(publicationId: $publicationId) }
+    }
+  `, { id: resourceId, publicationId });
+  if (!current.product) throw new Error("Product not found while checking publication");
+  if (current.product.publishedOnPublication) return false;
+
+  const data = await shopifyGraphQL(admin, PUBLISH_RESOURCE, {
+    id: resourceId,
+    input: [{ publicationId }],
+  });
+  const userErrors = data.publishablePublish.userErrors ?? [];
+  const blockingErrors = userErrors.filter(
+    (error) => !error.message.toLowerCase().includes("already"),
+  );
+  if (blockingErrors.length) {
+    throw new Error(blockingErrors.map((error) => error.message).join(", "));
+  }
+  return true;
 }
 
 async function getLocationId(admin, locationId) {
   return resolveShopifyLocationId(admin, locationId);
 }
 
-async function findVariantBySku(admin, sku) {
+async function findVariantBySku(admin, sku, locationId) {
   const data = await shopifyGraphQL(admin, GET_VARIANT_BY_SKU, {
-    sku: `sku:${sku}`,
+    sku: `sku:${JSON.stringify(sku)}`,
+    locationId,
   });
 
   const edge = data?.productVariants?.edges?.[0];
@@ -285,7 +380,9 @@ async function findVariantBySku(admin, sku) {
     currentCompareAtPrice: edge.node.compareAtPrice
       ? parseFloat(edge.node.compareAtPrice)
       : null,
-    currentQuantity: edge.node.inventoryQuantity,
+    currentQuantity: edge.node.inventoryItem.inventoryLevel?.quantities
+      .find((entry) => entry.name === "available")?.quantity ?? null,
+    currentProduct: edge.node.product,
     inventoryItemId: edge.node.inventoryItem.id,
     productId: edge.node.product.id,
     productTitle: edge.node.product.title,
@@ -382,6 +479,15 @@ async function createProduct(admin, product, locationId) {
     quantity: product.quantity,
   });
 
+  await updateProductDetails(admin, createdProduct.id, product, {
+    ...productPayload,
+    productType: productPayload.productType ?? "",
+    vendor: productPayload.vendor ?? "",
+  });
+  if (resolveProductStatus(product) === "ACTIVE") {
+    await publishToOnlineStore(admin, createdProduct.id);
+  }
+
   return {
     productId: createdProduct.id,
     productTitle: createdProduct.title,
@@ -392,16 +498,37 @@ async function createProduct(admin, product, locationId) {
   };
 }
 
-async function updateProductDetails(admin, productId, product) {
+async function updateProductDetails(admin, productId, product, currentProduct = null) {
+  const collectionId = await resolveCollectionId(admin, product.collection);
+  const productInput = {
+    id: productId,
+    title: product.model_name || product.sku,
+    descriptionHtml: buildDescriptionHtml(product),
+    productType: product.category || "",
+    vendor: product.vendor || product.manufacturer || "",
+    tags: buildTags(product),
+  };
+
+  if (currentProduct) {
+    for (const field of ["title", "descriptionHtml", "productType", "vendor"]) {
+      if ((currentProduct[field] ?? "") === productInput[field]) delete productInput[field];
+    }
+    if (JSON.stringify([...(currentProduct.tags ?? [])].sort()) ===
+        JSON.stringify([...productInput.tags].sort())) delete productInput.tags;
+  }
+  if (collectionId) {
+    const membership = await shopifyGraphQL(admin, `
+      query getCollectionMembership($id: ID!, $collectionId: ID!) {
+        product(id: $id) { inCollection(id: $collectionId) }
+      }
+    `, { id: productId, collectionId });
+    if (!membership.product) throw new Error("Product not found while checking collection");
+    if (!membership.product.inCollection) productInput.collectionsToJoin = [collectionId];
+  }
+  if (Object.keys(productInput).length === 1) return false;
+
   const data = await shopifyGraphQL(admin, UPDATE_PRODUCT, {
-    input: {
-      id: productId,
-      title: product.model_name,
-      descriptionHtml: buildDescriptionHtml(product),
-      productType: product.category,
-      vendor: product.vendor || product.manufacturer || undefined,
-      tags: buildTags(product),
-    },
+    product: productInput,
   });
 
   const userErrors = data?.productUpdate?.userErrors ?? [];
@@ -410,30 +537,34 @@ async function updateProductDetails(admin, productId, product) {
     throw new Error(userErrors.map((e) => e.message).join(", "));
   }
 
-  return data.productUpdate.product;
+  return true;
 }
 
-async function updateVariantPrice(admin, variantId, price, compareAtPrice) {
+async function updateVariantPrice(
+  admin,
+  productId,
+  variantId,
+  price,
+  compareAtPrice,
+) {
   const input = {
     id: variantId,
     price: String(price),
+    compareAtPrice: compareAtPrice == null ? null : String(compareAtPrice),
   };
 
-  if (compareAtPrice) {
-    input.compareAtPrice = String(compareAtPrice);
-  }
-
-  const data = await shopifyGraphQL(admin, UPDATE_VARIANT, {
-    input,
+  const data = await shopifyGraphQL(admin, UPDATE_DEFAULT_VARIANT, {
+    productId,
+    variants: [input],
   });
 
-  const userErrors = data?.productVariantUpdate?.userErrors ?? [];
+  const userErrors = data?.productVariantsBulkUpdate?.userErrors ?? [];
 
   if (userErrors.length > 0) {
     throw new Error(userErrors.map((e) => e.message).join(", "));
   }
 
-  return data.productVariantUpdate.productVariant;
+  return data.productVariantsBulkUpdate.productVariants[0];
 }
 
 async function updateInventory(admin, { inventoryItemId, locationId, quantity }) {
@@ -473,7 +604,7 @@ async function updateProductStatus(admin, { productId, product, currentStatus })
   if (currentStatus === targetStatus) return null;
 
   const data = await shopifyGraphQL(admin, UPDATE_PRODUCT, {
-    input: {
+    product: {
       id: productId,
       status: targetStatus,
     },
@@ -553,7 +684,7 @@ export async function runInventorySync({
 
   for (const product of productsToSync) {
     try {
-      const variant = await findVariantBySku(admin, product.sku);
+      const variant = await findVariantBySku(admin, product.sku, finalLocationId);
 
       if (!variant) {
         const created = await createProduct(admin, product, finalLocationId);
@@ -571,7 +702,9 @@ export async function runInventorySync({
         continue;
       }
 
-      await updateProductDetails(admin, variant.productId, product);
+      const detailsChanged = await updateProductDetails(
+        admin, variant.productId, product, variant.currentProduct,
+      );
 
       const priceChanged = variant.currentPrice !== product.price;
       const compareAtPriceChanged =
@@ -582,6 +715,7 @@ export async function runInventorySync({
       if (priceChanged || compareAtPriceChanged) {
         await updateVariantPrice(
           admin,
+          variant.productId,
           variant.variantId,
           product.price,
           product.compareAtPrice,
@@ -602,7 +736,13 @@ export async function runInventorySync({
         currentStatus: variant.productStatus,
       });
 
+      const publicationChanged = resolveProductStatus(product) === "ACTIVE"
+        ? await publishToOnlineStore(admin, variant.productId)
+        : false;
+
       if (
+        !detailsChanged &&
+        !publicationChanged &&
         !priceChanged &&
         !compareAtPriceChanged &&
         !quantityChanged &&
@@ -623,6 +763,9 @@ export async function runInventorySync({
         newQuantity: product.quantity,
         previousPrice: variant.currentPrice,
         newPrice: product.price,
+        detailsChanged,
+        publicationChanged,
+        compareAtPriceChanged,
         priceChanged,
         quantityChanged,
         statusChanged: newStatus

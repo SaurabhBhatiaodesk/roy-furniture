@@ -98,7 +98,7 @@ export default function CronSyncPage() {
                     Runs every <strong>{data.intervalMinutes} minutes</strong>,
                     processes up to <strong>{data.batchSize} products</strong> per
                     run — <strong>new SKUs first</strong>, then updated rows where{" "}
-                    <strong>Last Updated By Vendor</strong> changed.
+                    <strong>synced product data</strong> changed. Timestamp-only changes are ignored.
                   </Text>
                   <Text as="p" tone="subdued">
                     Fresh CSV from SFTP each run — new products show up within one
@@ -227,3 +227,4 @@ export default function CronSyncPage() {
     </Page>
   );
 }
+import process from "node:process";

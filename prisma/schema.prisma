@@ -10,7 +10,7 @@ generator client {
 // See https://www.prisma.io/docs/orm/reference/prisma-schema-reference#string for more information
 datasource db {
   provider = "postgresql"
-  url      = "postgres://u9df1cj5cg20eh:p7b830823055a0839ea9f059f0f9a7adeb7587b8d175ed2e2fe9b705d2ebfdf40@c55vaqijj0vpoi.cluster-czrs8kj4isg7.us-east-1.rds.amazonaws.com:5432/da9edvopo1dlsg"
+  url      = env("DATABASE_URL")
 }
 
 model Session {
@@ -63,7 +63,24 @@ model SyncJobItem {
 }
 
 model ProductSyncState {
-  sku                 String   @id
-  lastUpdatedByVendor String?
-  syncedAt            DateTime @updatedAt
+  sku         String   @id
+  changeToken String?  @map("lastUpdatedByVendor")
+  syncedAt    DateTime @updatedAt
+}
+
+model FurnitureWizardOrder {
+  id             String   @id @default(cuid())
+  shop           String
+  shopifyOrderId String
+  orderNumber    String?
+  payload        Json
+  status         String   @default("pending")
+  attempts       Int      @default(0)
+  lastError      String?
+  deliveredAt    DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([shop, shopifyOrderId])
+  @@index([status])
 }

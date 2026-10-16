@@ -20,7 +20,7 @@ export function branchSumCsvAdapter({ fileContent }) {
   };
 }
 
-function parseInvAdvBranchSum(fileContent) {
+export function parseInvAdvBranchSum(fileContent) {
   const rows = parseCSVRows(fileContent.trim());
   const headers = rows.shift()?.map((h) => clean(h)) ?? [];
 
@@ -35,13 +35,21 @@ function parseInvAdvBranchSum(fileContent) {
     const sku =
       row["Item Number"] || row["Item Num"] || row.ItemNumber || row.sku;
     const modelName =
-      row.RealName || row.Model || row.Description || row["Item Number"];
+      row.Model ||
+      row["Model Name"] ||
+      row.RealName ||
+      row.Description ||
+      row["Item Number"];
     const description = row.Description || "";
     const price = row.Retail || row.Regular;
     const compareAtPrice = row["Regular Price"] || row.Regular;
-    const quantity = row.Available ?? row.QtyAvailable ?? "0";
-    const inStockQty = row["In Stock"] ?? quantity;
-    const lastUpdatedByVendor =
+    const availableValue = row.Available ?? row.QtyAvailable;
+    const inStockValue = row["In Stock"];
+    const quantity = availableValue ?? inStockValue ?? "0";
+    const lastPpcUpdate =
+      row.LastPPCUpdate ||
+      row["Last PPC Update"] ||
+      row["LastPPC Update"] ||
       row["Last Updated By Vendor"] ||
       row["Last Updated"] ||
       row.LastUpdatedByVendor ||
@@ -65,7 +73,13 @@ function parseInvAdvBranchSum(fileContent) {
       return;
     }
 
-    const available = toInteger(quantity);
+    const available = Math.max(0, toInteger(quantity));
+    const inStockQuantity = Math.max(
+      0,
+      toInteger(inStockValue ?? availableValue ?? "0"),
+    );
+    const sellingPrice = toNumber(price);
+    const regularPrice = compareAtPrice ? toNumber(compareAtPrice) : null;
 
     valid.push({
       sku: clean(sku),
@@ -82,11 +96,15 @@ function parseInvAdvBranchSum(fileContent) {
       itemSize: clean(row["Item Size"]),
       color: clean(row.Color),
       style: clean(row.Style),
-      price: toNumber(price),
-      compareAtPrice: compareAtPrice ? toNumber(compareAtPrice) : null,
+      price: sellingPrice,
+      compareAtPrice:
+        regularPrice != null && regularPrice > sellingPrice
+          ? regularPrice
+          : null,
       quantity: available,
       available,
-      inStock: available > 0 || toInteger(inStockQty) > 0,
+      inStockQuantity,
+      inStock: available > 0,
       cost: toMoney(row.Cost),
       actualCost: toMoney(row["Actual Cost"]),
       barcode: clean(row["UPC Code"]),
@@ -94,7 +112,8 @@ function parseInvAdvBranchSum(fileContent) {
       hotList: toBoolean(row["Hot List"]),
       discontinued: toBoolean(row.Discontinue || row.Discontinued),
       specialOrder: toInteger(row["Spcl Order"]) === 1,
-      lastUpdatedByVendor: clean(lastUpdatedByVendor),
+      lastPpcUpdate: clean(lastPpcUpdate),
+      lastUpdatedByVendor: clean(lastPpcUpdate),
     });
   });
 

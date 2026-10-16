@@ -8,6 +8,7 @@ import { branchSumCsvAdapter } from "../adapters/branchSumCsvAdapter.js";
 import { runInventorySync } from "./inventorySync.js";
 import { unauthenticated } from "../shopify.server.js";
 import { getOfflineShopDomain } from "./shopSession.server.js";
+import { retryPendingFurnitureWizardOrders } from "./orderCoordination.server.js";
 import {
   buildSyncBatch,
   countTrackedProducts,
@@ -143,6 +144,13 @@ export async function runCronSyncJob({ shop: preferredShop } = {}) {
 
     console.log(`[cron-sync] Using shop from session table: ${shop}`);
 
+    const orderRetry = await retryPendingFurnitureWizardOrders();
+    if (orderRetry.attempted > 0) {
+      console.log(
+        `[order-sync] Retried ${orderRetry.attempted} order(s): ${orderRetry.delivered} delivered, ${orderRetry.failed} failed`,
+      );
+    }
+
     await loadProductsFromFtp({ forceRefresh: FRESH_CSV_EACH_RUN });
 
     const totalCsvProducts = state.cachedProducts.length;
@@ -187,7 +195,7 @@ export async function runCronSyncJob({ shop: preferredShop } = {}) {
         },
       };
 
-      console.log("[cron-sync] No product changes detected (Last Updated By Vendor).");
+      console.log("[cron-sync] No product changes detected (product data). ");
 
       if (trackedProducts >= totalCsvProducts) {
         state.cachedProducts = null;
@@ -215,7 +223,7 @@ export async function runCronSyncJob({ shop: preferredShop } = {}) {
 
     const syncedProducts = batch.filter(
       (product) =>
-        !report.failed.some((failure) => failure.sku === product.sku),
+        !report.failed.some((failure) => failure.sku === "ALL" || failure.sku === product.sku),
     );
 
     if (syncedProducts.length > 0) {
@@ -325,6 +333,6 @@ export function startCronSync() {
   });
 
   console.log(
-    `[cron-sync] Scheduled every ${minutes} minute(s), batch size ${BATCH_SIZE}, delta by Last Updated By Vendor (${schedule})`,
+    `[cron-sync] Scheduled every ${minutes} minute(s), batch size ${BATCH_SIZE}, delta by product data (${schedule})`,
   );
 }
