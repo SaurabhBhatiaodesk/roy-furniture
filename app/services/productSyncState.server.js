@@ -5,12 +5,14 @@ export function getLastUpdatedByVendor(product) {
   return getProductChangeToken(product);
 }
 
-export async function loadProductSyncStateMap() {
+export async function loadProductSyncStateMap(shop) {
+  const prefix = `${shop}:`;
   const rows = await prisma.productSyncState.findMany({
+    where: { sku: { startsWith: prefix } },
     select: { sku: true, changeToken: true },
   });
 
-  return new Map(rows.map((row) => [row.sku, row.changeToken ?? ""]));
+  return new Map(rows.map((row) => [row.sku.slice(prefix.length), row.changeToken ?? ""]));
 }
 
 export function partitionChangedProducts(products, syncStateMap) {
@@ -63,15 +65,15 @@ export function buildSyncBatch(products, syncStateMap, batchSize) {
   };
 }
 
-export async function markProductsSynced(products) {
+export async function markProductsSynced(products, shop) {
   if (!products.length) return;
 
   await prisma.$transaction(
     products.map((product) =>
       prisma.productSyncState.upsert({
-        where: { sku: product.sku },
+        where: { sku: `${shop}:${product.sku}` },
         create: {
-          sku: product.sku,
+          sku: `${shop}:${product.sku}`,
           changeToken: getLastUpdatedByVendor(product),
         },
         update: {
@@ -82,6 +84,6 @@ export async function markProductsSynced(products) {
   );
 }
 
-export async function countTrackedProducts() {
-  return prisma.productSyncState.count();
+export async function countTrackedProducts(shop) {
+  return prisma.productSyncState.count({ where: { sku: { startsWith: `${shop}:` } } });
 }

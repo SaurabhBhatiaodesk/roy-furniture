@@ -27,6 +27,7 @@ export async function loader({ request }) {
   const allShops = await listOfflineShops();
 
   return {
+    writesEnabled: process.env.FW_SYNC_APPROVED === "true" && process.env.CRON_SYNC_ENABLED === "true" && process.env.SHOP_DOMAIN === session.shop,
     lastRun: getLastCronRun(),
     progress: getCronSyncProgress(),
     intervalMinutes: Number(process.env.CRON_SYNC_INTERVAL_MINUTES || 10),
@@ -81,6 +82,7 @@ export default function CronSyncPage() {
       <Layout>
         <Layout.Section>
           <BlockStack gap="400">
+            {!data.writesEnabled && <Banner tone="warning" title="Integration paused pending client sign-off"><p>Automatic and manual writes are disabled. SKU audit is read-only.</p></Banner>}
             {!data.ftpConfigured && (
               <Banner tone="warning" title="FTP not configured">
                 <p>
@@ -108,7 +110,7 @@ export default function CronSyncPage() {
                   <Text as="p">
                     Runs every <strong>{data.intervalMinutes} minutes</strong>,
                     processes up to <strong>{data.batchSize} products</strong> per
-                    run — <strong>updated SKUs first</strong>, then new SKUs. Existing products sync when{" "}
+                    run — <strong>updated SKUs first</strong>, then newly matched Shopify SKUs. No product creation. Existing products sync when{" "}
                     <strong>synced product data</strong> changed. Timestamp-only changes are ignored.
                   </Text>
                   <Text as="p" tone="subdued">
@@ -159,7 +161,7 @@ export default function CronSyncPage() {
 
                   <Form method="post">
                     <input type="hidden" name="intent" value="run-now" />
-                    <Button submit loading={isRunning} variant="primary">
+                    <Button submit disabled={!data.writesEnabled} loading={isRunning} variant="primary">
                       Run Sync Now
                     </Button>
                   </Form>

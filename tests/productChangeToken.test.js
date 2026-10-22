@@ -31,3 +31,7 @@ test("change token ignores timestamp-only vendor refreshes", () => {
     getProductChangeToken({ ...product, lastPpcUpdate: "2026-08-13 11:00:00" }),
   );
 });
+
+test("merchandising changes do not trigger the restricted sync", () => {
+  assert.equal(getProductChangeToken(product), getProductChangeToken({ ...product, model_name: "Changed name", description: "New text", compareAtPrice: 1000 }));
+});

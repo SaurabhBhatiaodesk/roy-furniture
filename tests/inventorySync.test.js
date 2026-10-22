@@ -1,112 +1,29 @@
-import test from "node:test";
-import assert from "node:assert/strict";
-import { runInventorySync } from "../app/services/inventorySync.js";
-
-const product = { sku: "TEST-1", model_name: "Chair", price: 100, quantity: 2 };
-
-function fixture({ details = {}, quantity = 2, total = 99, status = "ACTIVE", published = true, collection = false, fail = false, publicationScopes = true } = {}) {
-  const calls = [];
-  const admin = { graphql: async (query, { variables } = {}) => {
-    calls.push({ query, variables });
-    let data;
-    if (query.includes("query getVariantBySku")) {
-      assert.equal(variables.locationId, "location-1");
-      data = { productVariants: { edges: [{ node: {
-        id: "variant-1", sku: product.sku, price: "100.00", compareAtPrice: null,
-        inventoryQuantity: total,
-        inventoryItem: { id: "item-1", inventoryLevel: { quantities: [{ name: "available", quantity }] } },
-        product: { id: "product-1", title: "Chair", descriptionHtml: "", productType: "", vendor: "", tags: [], status, ...details },
-      } }] } };
-    } else if (query.includes("query getSyncAccessScopes")) {
-      data = { currentAppInstallation: { accessScopes: publicationScopes ? [{ handle: "write_publications" }] : [] } };
-    } else if (query.includes("query getOnlineStorePublication")) {
-      data = { publications: { nodes: [{ id: "publication-1", supportsFuturePublishing: true }] } };
-    } else if (query.includes("query getPublicationStatus")) {
-      data = { product: { publishedOnPublication: published } };
-    } else if (query.includes("query findCollection")) {
-      data = { collections: { nodes: [{ id: "collection-1", title: "Living" }] } };
-    } else if (query.includes("query getCollectionMembership")) {
-      data = { product: { inCollection: collection } };
-    } else if (query.includes("mutation productUpdate")) {
-      data = { productUpdate: { product: { id: "product-1" }, userErrors: fail ? [{ message: "Write failed" }] : [] } };
-    } else if (query.includes("mutation publishResource")) {
-      data = { publishablePublish: { userErrors: [] } };
-    } else if (query.includes("mutation inventoryActivate")) {
-      data = { inventoryActivate: { userErrors: [] } };
-    } else if (query.includes("mutation inventorySetQuantities")) {
-      data = { inventorySetQuantities: { userErrors: [] } };
-    } else if (query.includes("mutation productVariantsBulkUpdate")) {
-      data = { productVariantsBulkUpdate: { productVariants: [{ id: "variant-1" }], userErrors: [] } };
-    } else throw new Error(`Unexpected operation: ${query}`);
-    return { json: async () => ({ data }) };
-  } };
-  return { calls, run: (overrides = {}) => runInventorySync({
-    admin, locationId: "location-1",
-    adapter: { getInventory: async () => ({ products: [{ ...product, ...overrides }], totalRows: 1 }) },
-  }) };
+import process from "node:process";
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { auditSkuMatches, runInventorySync } from '../app/services/restrictedSync.server.js';
+const product = { sku: 'DL-01', price: 100, priceSource: 'Retail', quantity: 1, inventoryVerified: true, discontinued: false, discontinuedVerified: true };
+function variant(overrides = {}) { return { id: 'v1', sku: 'DL-01', price: '100.00', inventoryItem: { id: 'i1', inventoryLevel: { quantities: [{ name: 'available', quantity: 1 }] } }, product: { id: 'p1', title: 'Client title', status: 'ACTIVE', publishedAt: '2026-01-01', discontinued: { value: 'false' } }, ...overrides }; }
+function fixture(variants = [variant()], data = product) {
+ const writes = [];
+ const admin = { graphql: async (query, { variables }) => {
+  if(query.includes('query syncCatalog')) return { json: async () => ({ data: { productVariants: { nodes: variants, pageInfo: { hasNextPage: false } } } }) };
+  writes.push({query,variables});
+  const key=query.includes('syncRetailPrice')?'productVariantsBulkUpdate':query.includes('syncAvailableStock')?'inventorySetQuantities':'metafieldsSet';
+  return {json:async()=>({data:{[key]:{userErrors:[]}}})};
+ } };
+ return {writes,run:()=>runInventorySync({admin,shop:'roy.myshopify.com',locationId:'l1',adapter:{getInventory:async()=>({products:[data],totalRows:1})}})};
 }
-
-test("repeated identical syncs perform no mutations, regardless of aggregate inventory", async () => {
-  const f = fixture();
-  for (let i = 0; i < 2; i++) {
-    const report = await f.run();
-    assert.equal(report.skipped.length, 1);
-    assert.equal(report.failed.length, 0);
-  }
-  assert.equal(f.calls.filter(c => c.query.includes("mutation")).length, 0);
-});
-
-test("details-only edits are reported updated and send only changed fields", async () => {
-  const f = fixture({ details: { title: "Old chair" } });
-  const report = await f.run();
-  assert.equal(report.updated[0].detailsChanged, true);
-  assert.equal(report.skipped.length, 0);
-  const writes = f.calls.filter(c => c.query.includes("mutation"));
-  assert.equal(writes.length, 1);
-  assert.deepEqual(writes[0].variables.product, { id: "product-1", title: "Chair" });
-});
-
-test("existing collection membership and unordered tags do not trigger writes", async () => {
-  const f = fixture({ collection: true, details: { tags: ["blue", "Living"] } });
-  const report = await f.run({ collection: "Living", color: "blue" });
-  assert.equal(report.skipped.length, 1);
-  assert.equal(f.calls.filter(c => c.query.includes("mutation")).length, 0);
-});
-
-test("missing publication is repaired and counted as an update", async () => {
-  const f = fixture({ published: false });
-  const report = await f.run();
-  assert.equal(report.updated[0].publicationChanged, true);
-  assert.equal(f.calls.filter(c => c.query.includes("mutation")).length, 1);
-});
-
-test("changed location quantity is updated even if aggregate quantity matches", async () => {
-  const f = fixture({ quantity: 1, total: 2 });
-  const report = await f.run();
-  assert.equal(report.updated[0].quantityChanged, true);
-  assert.equal(f.calls.filter(c => c.query.includes("mutation inventorySetQuantities")).length, 1);
-});
-
-test("failed details update is reported failed", async () => {
-  const f = fixture({ details: { title: "Old chair" }, fail: true });
-  const report = await f.run();
-  assert.equal(report.failed.length, 1);
-  assert.equal(report.skipped.length, 0);
-  assert.equal(report.updated.length, 0);
-});
-
-test("compare-at-only edits are counted as updates", async () => {
-  const f = fixture();
-  const report = await f.run({ compareAtPrice: 150 });
-  assert.equal(report.updated[0].compareAtPriceChanged, true);
-  assert.equal(f.calls.filter(c => c.query.includes("mutation")).length, 1);
-});
-
-test("missing optional publication permissions do not fail product sync or cause retries", async () => {
-  const f = fixture({ publicationScopes: false });
-  const report = await f.run();
-  assert.equal(report.failed.length, 0);
-  assert.equal(report.skipped.length, 1);
-  assert.equal(f.calls.some(c => c.query.includes("query getOnlineStorePublication")), false);
-  assert.equal(f.calls.some(c => c.query.includes("mutation")), false);
-});
+process.env.FW_SYNC_APPROVED='true'; process.env.CRON_SYNC_ENABLED='true'; process.env.SHOP_DOMAIN='roy.myshopify.com';
+test('identical active product makes no writes',async()=>{const f=fixture();const r=await f.run();assert.equal(r.skipped.length,1);assert.equal(f.writes.length,0);});
+test('unmatched FW product is never created',async()=>{const f=fixture([]);const r=await f.run();assert.equal(r.created.length,0);assert.equal(f.writes.length,0);});
+test('draft, archived and unpublished products are never updated',async()=>{for(const p of [{status:'DRAFT',publishedAt:'date'},{status:'ARCHIVED',publishedAt:'date'},{status:'ACTIVE',publishedAt:null}]){const f=fixture([variant({product:{id:'p1',...p}})],{...product,price:200});await f.run();assert.equal(f.writes.length,0);}});
+test('duplicate and missing internal SKUs are audit issues, not fuzzy matches',()=>{const variants=[variant(),variant({id:'v2'}),variant({id:'v3',sku:''})];const a=auditSkuMatches([product],variants);assert.equal(a.matches.length,0);assert.equal(a.issues.length,3);});
+test('duplicate FW Item Numbers block matching',()=>{assert.equal(auditSkuMatches([product,product],[variant()]).matches.length,0);});
+test('Retail-only change preserves compare-at and merchandising',async()=>{const f=fixture([variant()],{...product,price:200});const r=await f.run();assert.equal(r.updated.length,1);assert.equal(f.writes.length,1);assert.deepEqual(f.writes[0].variables.variants,[{id:'v1',price:'200'}]);});
+test('unknown inventory mapping blocks all writes',async()=>{const f=fixture([variant()],{...product,price:200,inventoryVerified:false});const r=await f.run();assert.match(r.failed[0].reason,/not verified/);assert.equal(f.writes.length,0);});
+test('discontinued flag is written without archiving or publishing',async()=>{const f=fixture([variant()],{...product,discontinued:true});const r=await f.run();assert.equal(r.updated[0].discontinuedChanged,true);assert.equal(f.writes.length,1);assert.equal(f.writes[0].variables.metafields[0].value,'true');});
+test('stock-only change uses location quantity with compare-and-set',async()=>{const f=fixture([variant()],{...product,quantity:0});await f.run();assert.equal(f.writes.length,1);assert.equal(f.writes[0].variables.input.quantities[0].compareQuantity,1);assert.equal(f.writes[0].variables.input.quantities[0].locationId,'l1');assert.equal(f.writes[0].variables.input.ignoreCompareQuantity,false);});
+test('unknown discontinued field blocks writes',async()=>{const f=fixture([variant()],{...product,discontinuedVerified:false});const r=await f.run();assert.equal(r.failed.length,1);assert.equal(f.writes.length,0);});
+test('paused integration performs no API calls',async()=>{process.env.FW_SYNC_APPROVED='false';try{const f=fixture();await assert.rejects(f.run(),/disabled/);assert.equal(f.writes.length,0);}finally{process.env.FW_SYNC_APPROVED='true';}});
+test('wrong shop cannot run sync',async()=>{process.env.SHOP_DOMAIN='different.myshopify.com';try{await assert.rejects(fixture().run(),/SHOP_DOMAIN/);}finally{process.env.SHOP_DOMAIN='roy.myshopify.com';}});

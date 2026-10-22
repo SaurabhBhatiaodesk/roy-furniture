@@ -1,29 +1,6 @@
 import { createHash } from "node:crypto";
 
-const SYNC_FIELDS = [
-  "sku",
-  "model_name",
-  "description",
-  "manufacturer",
-  "vendor",
-  "category",
-  "subcategory",
-  "type",
-  "collection",
-  "dimensions",
-  "itemSize",
-  "color",
-  "style",
-  "price",
-  "compareAtPrice",
-  "quantity",
-  "available",
-  "inStockQuantity",
-  "closeOut",
-  "hotList",
-  "discontinued",
-  "specialOrder",
-];
+const SYNC_FIELDS = ["sku", "price", "priceSource", "quantity", "inventoryVerified", "discontinued", "discontinuedVerified"];
 
 export function getProductChangeToken(product) {
   // Vendor export timestamps can refresh daily without any sellable data changing.
@@ -35,5 +12,5 @@ export function getProductChangeToken(product) {
     .update(JSON.stringify(fingerprint))
     .digest("hex");
 
-  return `v2:${digest}`;
+  return `v3:${digest}`;
 }

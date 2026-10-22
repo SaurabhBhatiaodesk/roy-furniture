@@ -1,34 +1,42 @@
-# Unnecessary product update fix
+# Client review scope — 22 October 2026
 
-CSV timestamps alone no longer trigger sync. The persisted token fingerprints product data.
-Existing Shopify product fields are compared before writing; updates include only changed
-fields. Existing collection membership and publication are checked before writing.
-Stock comparisons use available quantity at the sync location, not aggregate variant stock.
-Reports count details, publication, and compare-at price edits as updates. Setup failures
-never mark a batch synced.
+Production must remain OFF. Local implementation is not client sign-off.
 
-## Verification
+Implemented: exact internal variant SKU to FW Item Number matching; ACTIVE and
+Online Store published products only; no automatic creation, publishing, archiving
+or merchandising writes. Duplicate and missing SKUs block updates and appear in
+the read-only /app/sku-audit report. FW-only items are excluded before batching.
+Retail is mandatory; Regular is never a fallback. Compare-at prices are preserved
+pending client approval to clear them. Discontinued is an app-owned boolean
+fw_discontinued metafield for merchant automation, defined in both app TOMLs.
+Old queued import processing and demo creation are disabled.
 
-- `npm.cmd test`: regression coverage includes repeat sync with zero mutations, details-only
-  edits, collection membership, publication, per-location inventory, failures and compare-at price.
-- `npm.cmd run build`
-- Shopify GraphQL schema validation for sync operations.
+Writes default OFF. An approved release must explicitly set FW_SYNC_APPROVED=true,
+CRON_SYNC_ENABLED=true, and SHOP_DOMAIN to the intended shop. Manual sync uses the
+same guard. Order delivery is also paused. Saved delta state is scoped by shop.
 
-## Production rollout
+Pending client evidence and release gates:
 
-Deploy the server build through the existing hosting pipeline; Shopify app configuration
-deployment alone does not deploy this backend. This checkout also contains earlier pending
-changes; review those together before release. Run the normal Prisma generate/migrate deploy
-setup for the release. The ProductSyncState changeToken field maps to the existing
-lastUpdatedByVendor column; keep saved sync-state rows.
+1. Sample FW export with exact sellable Showroom/Warehouse column names, including
+   Showroom=0/Warehouse>0 and discontinued examples. Reservations and current
+   Available aggregation have NOT been verified.
+2. Configure verified FW_SHOWROOM_AVAILABLE_COLUMN and FW_WAREHOUSE_AVAILABLE_COLUMN,
+   or only after confirmation set FW_AVAILABLE_IS_COMBINED_SELLABLE=true for the
+   Available/QtyAvailable column. Never infer semantics from screenshots.
+3. Confirm FW_SHOPIFY_LOCATION_ID receives combined stock and that other Shopify
+   locations will not double-count the same stock. Unstocked items are not activated.
+4. Decide whether existing compare-at values should be cleared. No cleanup is run.
+5. Confirm ACTIVE + published Online Store eligibility. Manually created Shopify
+   products with matching internal SKUs become eligible via the same audit.
+6. Run read-only audit against real FW and Shopify data; correct missing/duplicate
+   and unmatched SKUs. No live audit has been run for this revised scope.
+7. Deploy and verify metafield definitions, configure merchant automation, test
+   client-provided fixtures, then obtain sign-off before enabling anything.
 
-Confirm the installed app has the product, inventory, location and publication scopes used
-by this backend. The roy-furniture app configuration includes publication scopes; the generic
-shopify.app.toml currently does not.
+Invalid or unverified inventory/Discontinued data blocks all writes for that item;
+no stock is guessed as zero and no missing discontinued value is assumed false.
+Stock writes use compare-and-set. Titles, descriptions, tags, status, publication
+and compare-at fields are never included in sync mutations.
 
-The first cron cycles will reconcile old tokens in batches (default 250). Matching Shopify
-products should require no mutations; genuine differences will be applied. Subsequent identical
-CSV exports, including timestamp-only refreshes, should show no pending changes.
-Verify production logs and several products from the client's screenshot across two cycles
-before telling the client the live incident is resolved. Shopify order or inventory activity
-and other apps can still legitimately change product update timestamps.
+Do not call this production-complete until mapping evidence, live audit, automation
+acceptance, and signed approval are completed. Do not restart dynos or auto deploys.

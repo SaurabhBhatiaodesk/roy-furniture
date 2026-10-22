@@ -19,3 +19,9 @@ redirect_urls = [ "https://roys-ed41ff436ea9.herokuapp.com/api/auth" ]
 
 [build]
 automatically_update_urls_on_dev = true
+
+[product.metafields.app.fw_discontinued]
+type = "boolean"
+name = "Furniture Wizard discontinued"
+description = "FW Discontinued flag for merchant automation. Does not change Shopify status automatically."
+access.admin = "merchant_read_write"

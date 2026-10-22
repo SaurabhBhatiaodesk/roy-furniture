@@ -18,7 +18,7 @@ export default function App() {
       <PolarisAppProvider i18n={enTranslations}>  {/* Polaris i18n context */}
         <s-app-nav>
           <s-link href="/app">Home</s-link>
-          <s-link href="/app/upload">Upload CSV</s-link>
+          <s-link href="/app/sku-audit">SKU Audit</s-link>
           <s-link href="/app/sync">Inventory Sync</s-link>
           <s-link href="/app/cron">FTP Cron Sync</s-link>
         </s-app-nav>

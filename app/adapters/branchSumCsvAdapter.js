@@ -1,3 +1,4 @@
+import process from "node:process";
 /**
  * Adapter for InvAdvBranchSum.csv (single-file FTP sync).
  */
@@ -43,8 +44,8 @@ export function parseInvAdvBranchSum(fileContent) {
       row.Description ||
       row["Item Number"];
     const description = row.Description || "";
-    const price = row.Retail || row.Regular;
-    const compareAtPrice = row["Regular Price"] || row.Regular;
+    const price = row.Retail;
+    // Compare-at prices are intentionally not sourced from FW.
     const availableValue = row.Available ?? row.QtyAvailable;
     const inStockValue = row["In Stock"];
     const quantity = availableValue ?? inStockValue ?? "0";
@@ -81,7 +82,16 @@ export function parseInvAdvBranchSum(fileContent) {
       toInteger(inStockValue ?? availableValue ?? "0"),
     );
     const sellingPrice = toNumber(price);
-    const regularPrice = compareAtPrice ? toNumber(compareAtPrice) : null;
+    const showroomColumn = process.env.FW_SHOWROOM_AVAILABLE_COLUMN;
+    const warehouseColumn = process.env.FW_WAREHOUSE_AVAILABLE_COLUMN;
+    const numericStock = value => value != null && String(value).trim() !== "" && Number.isInteger(toNumber(value));
+    const branchVerified = showroomColumn && warehouseColumn && showroomColumn !== warehouseColumn && numericStock(row[showroomColumn]) && numericStock(row[warehouseColumn]);
+    const totalVerified = process.env.FW_AVAILABLE_IS_COMBINED_SELLABLE === "true" && numericStock(availableValue);
+    const verifiedQuantity = branchVerified
+      ? Math.max(0, toInteger(row[showroomColumn])) + Math.max(0, toInteger(row[warehouseColumn]))
+      : available;
+    const discontinuedRaw = row.Discontinue ?? row.Discontinued;
+    const discontinuedVerified = discontinuedRaw != null && ["true", "false", "1", "0", "yes", "no"].includes(String(discontinuedRaw).trim().toLowerCase());
 
     valid.push({
       sku: clean(sku),
@@ -99,11 +109,11 @@ export function parseInvAdvBranchSum(fileContent) {
       color: clean(row.Color),
       style: clean(row.Style),
       price: sellingPrice,
-      compareAtPrice:
-        regularPrice != null && regularPrice > sellingPrice
-          ? regularPrice
-          : null,
-      quantity: available,
+      priceSource: "Retail",
+      inventoryVerified: Boolean(branchVerified || totalVerified),
+      discontinuedVerified,
+      compareAtPrice: null,
+      quantity: verifiedQuantity,
       available,
       inStockQuantity,
       inStock: available > 0,
@@ -112,7 +122,7 @@ export function parseInvAdvBranchSum(fileContent) {
       barcode: clean(row["UPC Code"]),
       closeOut: toBoolean(row.CloseOut),
       hotList: toBoolean(row["Hot List"]),
-      discontinued: toBoolean(row.Discontinue || row.Discontinued),
+      discontinued: toBoolean(discontinuedRaw),
       specialOrder: toInteger(row["Spcl Order"]) === 1,
       lastPpcUpdate: clean(lastPpcUpdate),
       lastUpdatedByVendor: clean(lastPpcUpdate),

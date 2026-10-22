@@ -29,7 +29,7 @@ import {
   ClockIcon,
 } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
-import { csvAdapter } from "../adapters/csvAdapter";
+import { branchSumCsvAdapter as csvAdapter } from "../adapters/branchSumCsvAdapter";
 import { apiAdapter } from "../adapters/apiAdapter";
 import { runInventorySync } from "../services/inventorySync";
 
@@ -52,6 +52,7 @@ export async function action({ request }) {
     const report = await runInventorySync({
       adapter,
       admin,
+      shop: session.shop,
       locationId: session.locationId,
     });
 

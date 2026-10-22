@@ -1,6 +1,33 @@
+import process from "node:process";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { parseInvAdvBranchSum } from "../app/adapters/branchSumCsvAdapter.js";
+
+test("Regular is never used as a fallback for a missing Retail price", () => {
+  const result = parseInvAdvBranchSum('Item Number,Retail,Regular,Available\nA,,100,1');
+  assert.equal(result.valid.length, 0);
+  assert.equal(result.invalid.length, 1);
+});
+
+test("Showroom zero plus Warehouse one remains available using verified sellable columns", () => {
+  const oldShowroom = process.env.FW_SHOWROOM_AVAILABLE_COLUMN;
+  const oldWarehouse = process.env.FW_WAREHOUSE_AVAILABLE_COLUMN;
+  process.env.FW_SHOWROOM_AVAILABLE_COLUMN = "Showroom sellable";
+  process.env.FW_WAREHOUSE_AVAILABLE_COLUMN = "Warehouse sellable";
+  try {
+    const result = parseInvAdvBranchSum('Item Number,Retail,Available,Showroom sellable,Warehouse sellable,Discontinued\nA,100,0,0,1,Yes\nB,100,0,0,0,No');
+    assert.equal(result.valid[0].quantity, 1);
+    assert.equal(result.valid[0].inventoryVerified, true);
+    assert.equal(result.valid[0].discontinued, true);
+    assert.equal(result.valid[0].discontinuedVerified, true);
+    assert.equal(result.valid[1].quantity, 0);
+  } finally {
+    if (oldShowroom === undefined) delete process.env.FW_SHOWROOM_AVAILABLE_COLUMN;
+    else process.env.FW_SHOWROOM_AVAILABLE_COLUMN = oldShowroom;
+    if (oldWarehouse === undefined) delete process.env.FW_WAREHOUSE_AVAILABLE_COLUMN;
+    else process.env.FW_WAREHOUSE_AVAILABLE_COLUMN = oldWarehouse;
+  }
+});
 
 test("incremental CSV parsing preserves quoted multiline fields and skips invalid rows", () => {
   const result = parseInvAdvBranchSum('Item Number,Description,Retail,Available\r\n,"Invalid",99,1\r\nCHAIR-1,"A chair, with ""arms""\nand cushion",100,2\r\nCHAIR-2,Chair,50,1');
@@ -24,7 +51,7 @@ test("parses LastPPCUpdate and Furniture Wizard product fields", () => {
     sku: "SOFA-1",
     model_name: "Roy Sofa",
     price: 899,
-    compareAtPrice: 1099,
+    compareAtPrice: null,
     quantity: 2,
     available: 2,
     inStockQuantity: 3,

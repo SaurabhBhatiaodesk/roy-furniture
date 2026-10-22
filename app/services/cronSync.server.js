@@ -1,3 +1,5 @@
+import { assertSyncApproved } from "./syncApproval.server.js";
+import { prepareSyncProducts } from "./restrictedSync.server.js";
 /* global globalThis */
 import { readFile, writeFile, stat, unlink } from "fs/promises";
 import { join } from "path";
@@ -8,7 +10,6 @@ import { branchSumCsvAdapter } from "../adapters/branchSumCsvAdapter.js";
 import { runInventorySync } from "./inventorySync.js";
 import { unauthenticated } from "../shopify.server.js";
 import { getOfflineShopDomain } from "./shopSession.server.js";
-import { retryPendingFurnitureWizardOrders } from "./orderCoordination.server.js";
 import {
   buildSyncBatch,
   countTrackedProducts,
@@ -142,15 +143,9 @@ export async function runCronSyncJob({ shop: preferredShop } = {}) {
 
   try {
     const shop = await getOfflineShopDomain(preferredShop);
+    assertSyncApproved(shop);
 
     console.log(`[cron-sync] Using shop from session table: ${shop}`);
-
-    const orderRetry = await retryPendingFurnitureWizardOrders();
-    if (orderRetry.attempted > 0) {
-      console.log(
-        `[order-sync] Retried ${orderRetry.attempted} order(s): ${orderRetry.delivered} delivered, ${orderRetry.failed} failed`,
-      );
-    }
 
     await loadProductsFromFtp({ forceRefresh: FRESH_CSV_EACH_RUN });
 
@@ -160,14 +155,18 @@ export async function runCronSyncJob({ shop: preferredShop } = {}) {
       throw new Error("No valid products found in CSV");
     }
 
-    const syncStateMap = await loadProductSyncStateMap();
+    const { admin } = await unauthenticated.admin(shop);
+    const prepared = await prepareSyncProducts(admin, state.cachedProducts, process.env.FW_SHOPIFY_LOCATION_ID);
+    console.log(`[cron-sync] Eligible active Online Store matches: ${prepared.products.length}; SKU audit issues: ${prepared.audit.issues.length}; FW-only products excluded: ${prepared.audit.fwOnlyCount}`);
+    state.cachedProducts = prepared.products;
+    const syncStateMap = await loadProductSyncStateMap(shop);
     const {
       batch,
       pendingNew,
       pendingUpdated,
       pendingTotal,
     } = buildSyncBatch(state.cachedProducts, syncStateMap, BATCH_SIZE);
-    const trackedProducts = await countTrackedProducts();
+    const trackedProducts = await countTrackedProducts(shop);
 
     console.log(
       `[cron-sync] Delta sync — ${pendingTotal} pending (${pendingNew} new, ${pendingUpdated} updated) of ${totalCsvProducts} CSV products (${trackedProducts} tracked)`,
@@ -207,7 +206,7 @@ export async function runCronSyncJob({ shop: preferredShop } = {}) {
       return state.lastRun;
     }
 
-    const { admin } = await unauthenticated.admin(shop);
+
 
     const newInBatch = batch.filter((p) => !syncStateMap.has(p.sku)).length;
 
@@ -228,13 +227,13 @@ export async function runCronSyncJob({ shop: preferredShop } = {}) {
     );
 
     if (syncedProducts.length > 0) {
-      await markProductsSynced(syncedProducts);
+      await markProductsSynced(syncedProducts, shop);
     }
 
-    const trackedAfterSync = await countTrackedProducts();
+    const trackedAfterSync = await countTrackedProducts(shop);
     const remaining = buildSyncBatch(
       state.cachedProducts,
-      await loadProductSyncStateMap(),
+      await loadProductSyncStateMap(shop),
       BATCH_SIZE,
     );
 
@@ -301,7 +300,7 @@ export async function runCronSyncJob({ shop: preferredShop } = {}) {
 export function startCronSync() {
   const state = getState();
 
-  if (process.env.CRON_SYNC_ENABLED === "false") {
+  if (process.env.CRON_SYNC_ENABLED !== "true" || process.env.FW_SYNC_APPROVED !== "true") {
     console.log("[cron-sync] Disabled (CRON_SYNC_ENABLED=false)");
     return;
   }
